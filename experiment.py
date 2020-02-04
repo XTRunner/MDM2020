@@ -1,8 +1,11 @@
 from lda_learner import places_reviews
-import os, csv, pickle, random
+import os, csv, pickle, random, time
 from gensim.test.utils import datapath
 from gensim import models
 import greedy_search
+
+from shapely.geometry import Point
+from shapely.geometry.polygon import Polygon
 
 import matplotlib.pyplot as plt
 from matplotlib import collections as mc
@@ -221,6 +224,15 @@ def visual_res(ns, es, res_path):
 
     plt.plot(poi_node_x, poi_node_y, 'bo', markersize=12)
 
+    selected_p_x, selected_p_y = [], []
+    for each_id in res_path:
+        selected_p_x.append(ns[each_id]['lng'])
+        selected_p_y.append(ns[each_id]['lat'])
+
+    plt.plot(selected_p_x, selected_p_y, 'gp', markersize=14)
+
+    plt.show()
+    '''
     #plt.show()
     if res_path:
         plt.plot(ns[res_path[0]]['lng'], ns[res_path[0]]['lat'], 'Dm', markersize=12)
@@ -237,6 +249,7 @@ def visual_res(ns, es, res_path):
         plt.plot(print_path_x, print_path_y, 'g-', linewidth=5)
 
     plt.show()
+    '''
 
 
 def main():
@@ -244,6 +257,9 @@ def main():
     # Memphis, New_York_city
     state_name = 'New York'
     # Tennessee, New York
+
+    if not os.path.exists('PoI_network'):
+        os.mkdir('PoI_network')
 
     if os.path.exists('LDA_model/' + place_name + '_cleaned_review.csv'):
         print("Start Loading Cleaned Data...")
@@ -265,16 +281,53 @@ def main():
 
     print('--------------------------------')
 
-    temp_file = datapath("C:/Users/xuteng/PycharmProjects/MDM20/LDA_model/lda_trained_model")
+    temp_file = datapath("C:/Users/xuteng/PycharmProjects/MDM2020/LDA_model/lda_trained_model")
     lda_model = models.LdaModel.load(temp_file)
 
     dict_w = lda_model.id2word
 
-    osm_g = graph_construct.PoI_Graph(" ".join(place_name.split("_")) + ', ' + state_name + ', USA', 'drive')
+    if os.path.exists('PoI_network/' + place_name + '_ns.pkl') and \
+            os.path.exists('PoI_network/' + place_name + '_es.pkl'):
+        ns = pickle.load(open('PoI_network/' + place_name + '_ns.pkl', 'rb'))
+        es = pickle.load(open('PoI_network/' + place_name + '_es.pkl', 'rb'))
+        print("Load PoI network from Local...")
+    else:
+        osm_g = graph_construct.PoI_Graph(" ".join(place_name.split("_")) + ', ' + state_name + ', USA', 'drive')
 
-    pois_lng_lat = pickle.load(open(place_name + '_attractions_lng_lat.pkl', 'rb'))
+        pois_lng_lat = pickle.load(open(place_name + '_attractions_lng_lat.pkl', 'rb'))
 
-    ns, es = osm_g.poi_overlay(pois_lng_lat)
+        ns, es = osm_g.poi_overlay(pois_lng_lat)
+
+        with open('PoI_network/' + place_name + '_ns.pkl', 'wb') as wfile:
+            pickle.dump(ns, wfile)
+
+        with open('PoI_network/' + place_name+ '_es.pkl', 'wb') as wfile:
+            pickle.dump(es, wfile)
+
+    if not os.path.exists('experiment_related'):
+        os.mkdir('experiment_related')
+
+    if os.path.exists('experiment_related/' + place_name + '_picked_q.pkl'):
+        picked_q = pickle.load(open('experiment_related/' + place_name + '_picked_q.pkl', 'rb'))
+    else:
+        picked_q = set()
+
+        if place_name == 'New_York_city':
+            # manhattan area
+            checked_polygon = Polygon([(-74.01, 40.70), (-74.00, 40.71), (-73.96, 40.78), (-73.985, 40.78)])
+            selected_num = 150
+        elif place_name == 'Memphis':
+            # Downtown
+            checked_polygon = Polygon([(-90.075, 35.155), (-89.925, 35.155), (-89.925, 35.12), (-90.075, 35.12)])
+            selected_num = 80
+
+        while len(picked_q) <= selected_num:
+            random_idx = random.randint(0, len(ns)-1)
+            checked_point = Point(ns[random_idx]['lng'], ns[random_idx]['lat'])
+            if checked_polygon.contains(checked_point):
+                picked_q.add(random_idx)
+
+        pickle.dump(picked_q, open('experiment_related/' + place_name + '_picked_q.pkl', 'wb'))
 
     tree_flag = 0
 
@@ -289,9 +342,10 @@ def main():
             for each_p in v['sites']:
                 p_lng, p_lat = v['lng'], v['lat']
 
-                #p_reviews = reviews[each_p.replace(', ' + place_name + ', USA', '')]
-
-                p_reviews = reviews[each_p.replace(', New York, USA', '')]
+                if place_name == 'Memphis':
+                    p_reviews = reviews[each_p.replace(', ' + place_name + ', USA', '')]
+                elif place_name == "New_York_city":
+                    p_reviews = reviews[each_p.replace(', New York, USA', '')]
 
                 corpus = dict_w.doc2bow((" ".join(p_reviews)).split())
 
@@ -314,12 +368,69 @@ def main():
 
     print('HR-tree has been built. Highest level is:', root.level)
 
-    init_node = 40000
+    k_vals = [2, 3, 4, 5]
+    d_ranges = [500, 1000, 1500, 3000]
+    # 40000
+    if os.path.exists('final_res_' + place_name + '.pkl'):
+        final_res = pickle.load(open('final_res_' + place_name + '.pkl', 'rb'))
+    else:
+        final_res = {}
 
-    # root, init_node, d_range, ns, es, place_feature, k
-    res_node = greedy_search.greedy_search_alg(root, init_node, 3000, ns, es, poi_score, 3, graph_f=True)
+    for idx_count, init_node in enumerate(list(picked_q)):
+        if init_node not in final_res:
+            final_res[init_node] = {}
+            for k_val in k_vals:
+                for d_range in d_ranges:
+                    # root, init_node, d_range, ns, es, place_feature, k, verbal_log=True
+                    print("-------------------------------------------------------")
+                    print("Now working on ", idx_count+1, " out of ", len(picked_q))
+                    print('With k=', k_val, ' and distance range=', d_range)
+                    graph_res_node, graph_div_score, graph_t_complex, graph_e_complex = \
+                        greedy_search.greedy_graph_search(root, init_node, d_range, ns, es, poi_score, k_val, verbal_log=False)
+                    #print('graph:', runtime, visited_edge)
+                    #visual_res(ns, es, res_node.print_path())
+                    #print(graph_t_complex)
+                    #print(graph_e_complex)
+                    #print('////////////////////////////////////////////')
+                    print("Done with Graph Search!!!")
 
-    visual_res(ns, es, res_node.print_path())
+                    tree_res_node, tree_div_score, tree_t_complex, tree_e_complex = \
+                        greedy_search.greedy_path_search(root, init_node, d_range, ns, es, poi_score, k_val, verbal_log=False)
+                    #print('tree:', runtime, visited_edge)
+                    #visual_res(ns, es, res_node.print_path())
+                    #print(tree_t_complex)
+                    #print(tree_e_complex)
+                    #print('////////////////////////////////////////////')
+                    print("Done with Tree Search!!!")
+
+                    #init_node, d_range, ns, es, place_feature, k, verbal_log = True, complexity = True
+                    dij_res_node, dij_div_score, dij_path, dij_t_complex, dij_e_complex = \
+                        greedy_search.dijkstra_alg(init_node, d_range, ns, es, poi_score, k_val, verbal_log=False)
+                    print("Done with Dijkstra algorithm!!!")
+                    #print(res_node.res, div_score, runtime, visited_edge)
+                    #print(path)
+                    #print(dij_t_complex)
+                    #print(dij_e_complex)
+                    #print('////////////////////////////////////////////')
+
+                    timer_4_rw = max([graph_t_complex[-1][0], tree_t_complex[-1][0], dij_t_complex[-1][0]])
+                    rw_path, rw_res_subset, rw_div_score, rw_t_complex, rw_e_complex = \
+                        greedy_search.random_walk_restart(init_node, d_range, ns, es, poi_score, k_val, timer=timer_4_rw, verbal_log=False)
+                    print("Done with Random Walk!!!")
+                    #print(div_score, res_subset, runtime, visited_edge)
+                    #print(path)
+                    #print(rw_t_complex)
+                    #print(rw_e_complex)
+                    #print('////////////////////////////////////////////')
+
+                    final_res[init_node][str(k_val) + '_' + str(d_range)] = {'node_t': graph_t_complex, 'node_e': graph_e_complex,
+                                                                             'edge_t': tree_t_complex, 'edge_e': tree_e_complex,
+                                                                             'dij_t': dij_t_complex, 'dij_e': dij_e_complex,
+                                                                             'rw_t': rw_t_complex, 'rw_e': rw_e_complex}
+
+            with open('final_res_' + place_name + '.pkl', 'wb') as wfile:
+                pickle.dump(final_res, wfile)
+
 
 
 if __name__ == '__main__':
