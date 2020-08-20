@@ -26,4 +26,8 @@ Major Data:
 
 -- experiment_related: All the randomly picked query points in each city (for reproducing experimental results)
 
-Note: If you are interested in using TripAdvisor web crawler or attraction reviews dataset proposed in this work, please consider cite this work. And if there is any question, please contact xuteng@iastate.edu. Thanks.
+Note: If you are interested in using TripAdvisor web crawler or attraction reviews dataset proposed in this work, please consider cite this work, https://ieeexplore.ieee.org/document/9162294
+
+X. Teng, G. Trajcevski, J. Kim and A. Züfle, "Semantically Diverse Path Search," 2020 21st IEEE International Conference on Mobile Data Management (MDM), Versailles, France, 2020, pp. 69-78, doi: 10.1109/MDM48529.2020.00028.
+
+If you have any question regarding this work, please feel free to reach out to me through xuteng@iastate.edu. Thanks for your interest:)
