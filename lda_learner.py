@@ -179,7 +179,7 @@ def main():
         print(lda_model.print_topics()[i])
 
     # Save to disk
-    temp_file = datapath("C:/Users/xuteng/PycharmProjects/MDM20/LDA_model/lda_trained_model")
+    temp_file = datapath("LDA_model/lda_trained_model")
     lda_model.save(temp_file)
 
 
