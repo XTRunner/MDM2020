@@ -281,7 +281,7 @@ def main():
 
     print('--------------------------------')
 
-    temp_file = datapath("C:/Users/xuteng/PycharmProjects/MDM2020/LDA_model/lda_trained_model")
+    temp_file = datapath(os.getcwd() + "\\LDA_model\\lda_trained_model")
     lda_model = models.LdaModel.load(temp_file)
 
     dict_w = lda_model.id2word
